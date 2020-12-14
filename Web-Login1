@@ -1,0 +1,642 @@
+<pega:choose>
+    <pega:when test="pyUnsupportedBrowsers" >
+        <pega:include name='pyUnsupportedBrowserLoginMessage' type='Rule-HTML-Fragment'/>
+    </pega:when>
+    <pega:otherwise>
+        <%
+            try {
+                ClipboardPage portal = tools.createPage("Data-Portal", "");
+                tools.putParamValue("BuildLabelString", portal.getString("pxBuildInfoLabel"));
+                tools.putParamValue("BuildName", portal.getString("pxBuildName"));
+
+            } catch(Exception e) {
+                tools.putParamValue("BuildLabelString", "");
+                tools.putParamValue("BuildName", "");
+            }
+            String baseURL = com.pega.pegarules.pub.util.StringUtils.urlCrossScriptingFilter(tools.findPage("pxThread").getString("pxReqURI"));
+            String captchaURL = baseURL + "?pyActivity=Code-Security.pyGenerateCaptcha";
+            String cacheManifestURL = baseURL + "?" + pega_rules_utilities.pzEncryptURLActionString(tools, "Global","pyActivity=Code-Security.pzGenerateLoginCacheManifest");
+
+            tools.putParamValue("TenantName",tools.findPage("pxRequestor").getString("pzTenantName"));
+            boolean hasTenantId = false;
+            if( "true".equals(tools.findPage("pxProcess.pxAdminSystem").getString("pyIsMT"))  &&
+                    !"shared".equals( tools.findPage("pxRequestor").getString("pzTenantName")) &&
+                    !"".equals( tools.findPage("pxRequestor").getString("pzTenantName").trim()) ) {
+                hasTenantId = true;
+            }
+            String ua = pega_desktop_httprequestheader.pyGetUserAgent(tools);
+            boolean isHybridClient = false;
+            boolean isPegaElectronContainer = false;
+            if (ua != null && ua.contains("AmpWebControl")) {
+                isHybridClient = true;
+            }
+            String enableFingerprintAuthenticator = "";
+            try {
+                if(isHybridClient) {
+                    ClipboardPage daSysSetPage = tools.createPage("Data-Admin-System-Settings", "wrkSystemSetting");
+                    daSysSetPage.putString("pyPurpose",  "weblogin/mobile/enabletouchid");
+                    daSysSetPage.putString("pyOwner", "Pega-EndUserUI");
+
+                    Database dbConn = tools.getDatabase();
+                    daSysSetPage = dbConn.open(daSysSetPage, false);
+                    if (daSysSetPage != null) {
+                        enableFingerprintAuthenticator = daSysSetPage.getString("pySetting");
+                    }
+                }
+            }
+            catch (Exception e) {
+            }
+        %><!DOCTYPE html>
+        <pega:when name="pyIsPegaElectronContainer">
+            <%
+                isPegaElectronContainer = true;
+            %>
+        </pega:when>
+        <%
+            if(isHybridClient || isPegaElectronContainer) {
+        %>
+        <html manifest='<%= cacheManifestURL %>' lang='en-us'>
+        <%
+        } else {
+        %>
+        <html lang='en-us'>
+        <%
+            }
+        %>
+        <head>
+            <meta http-equiv="Content-type" content="text/html;charset=UTF-8" />
+            <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+            <meta name="application-name" content="<pega:lookup property="pxRequestor.pyCaption" value="Login Page" />">
+            <meta name="description" content="<pega:lookup property="pxRequestor.pyCaption" value="Login Page" />">
+            <pega:when test='pyIsMobile'>
+                <meta name="apple-mobile-web-app-capable" content="yes">
+                <meta name="apple-touch-fullscreen" content="yes">
+                <meta name="format-detection" content="telephone=no">
+                <meta name="mobile-web-app-capable" content="yes">
+                <meta name="apple-mobile-web-app-status-bar-style" content="black">
+            </pega:when>
+            <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+            <pega:include name="pyImageTags" inline="true" />
+            <link rel="icon" type="image/png" sizes="32x32" href="images/pzPegaIcon32.png">
+            <link rel="icon" type="image/png" sizes="16x16" href="images/pzPegaIcon16.png">
+            <link rel="shortcut icon" href="images/pzPegaIcon.ico">
+            <title>
+                <pega:lookup property="pxRequestor.pyCaption" value="Login Page" />
+            </title>
+            
+            <style>
+                .captchaImg {
+                    background: url('<%=captchaURL %>') no-repeat 0 0;
+                    width: 155px;
+                    height: 50px;
+                    margin: auto;
+                    background-color: #FFF;
+                }
+            </style>
+            <pega:when java='<%= tools.findPage("LoginError") != null %>'>
+                <pega:when test='(AlwaysCaptcha.pxShowCaptcha=="true" || LoginError.pxShowCaptcha=="true")'>
+                    <pega:when java='<%= tools.findPage("Declare_AuthPolicies") != null %>'>
+                        <pega:choose>
+                            <pega:when test='(Declare_AuthPolicies.pyCaptchaType=="custom")'>
+                                <pega:include name="pyCustomCaptchaHead" type="Rule-HTML-Fragment"/>
+                            </pega:when>
+                        </pega:choose>
+                    </pega:when>
+                </pega:when>
+            </pega:when>
+        </head>
+        <body onload="processOnLoad()">
+           <main role="main">
+            <pega:when java='<%= isHybridClient || isPegaElectronContainer %>'>
+                <div id="logsContainerBackground"></div>
+                <div id="paddingContainer">
+                    <div id="logsContainer">
+                        <div class="logsLayoutRow" id="logsRow1">
+                            <div class="logsHeader lastCell"><p>Last <span id="numberOfLogs"></span> logs</p></div>
+                            <div class="logsHeader loadCell"><p id="loadMoreLogs" class="smallButton" onclick="LogsContainer.loadMoreLogs()">Load more logs...</p></div>
+                            <div class="logsHeader closeCell"><div id="closeLogsContainer" onclick="LogsContainer.close()"><p class="smallButton">&#10006;</p></div></div>
+                        </div>
+                        <div class="logsLayoutRow rowBorder" id="logsRow2">
+                            <div class="resultCell">
+                                <textarea readonly id="resultTextarea"></textarea>
+                            </div>
+                        </div>
+                        <div class="logsLayoutRow" id="logsRow3">
+                            <div class="levelCell">
+                                <p>Logs level:&nbsp;
+                                    <select id="levelSelect" onchange="LogsContainer.filterLogs()">
+                                        <option value="0" disabled="disabled">SILENT</option>
+                                        <option value="1">ERROR</option>
+                                        <option value="2">WARNING</option>
+                                        <option value="3">INFO</option>
+                                        <option value="4" selected="selected">DEBUG</option>
+                                    </select>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </pega:when>
+<style>
+body {
+  margin: 0;
+  color: #6a6f8c;
+  background: #c8c8c8;
+  font: 600 16px/18px "Open Sans", sans-serif;
+}
+*,
+:after,
+:before {
+  box-sizing: border-box;
+}
+.clearfix:after,
+.clearfix:before {
+  content: "";
+  display: table;
+}
+.clearfix:after {
+  clear: both;
+  display: block;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.login-wrap {
+  width: 100%;
+  margin: auto;
+  max-width: 525px;
+  min-height: 670px;
+  position: relative;
+  background: url(https://raw.githubusercontent.com/khadkamhn/day-01-login-form/master/img/bg.jpg)
+    no-repeat center;
+  box-shadow: 0 12px 15px 0 rgba(0, 0, 0, 0.24),
+    0 17px 50px 0 rgba(0, 0, 0, 0.19);
+}
+.login-html {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  padding: 90px 70px 50px 70px;
+ background: rgba(10, 47, 81, 0.9);
+}
+.login-html .sign-in-htm,
+.login-html .sign-up-htm {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+  transform: rotateY(180deg);
+  backface-visibility: hidden;
+  transition: all 0.4s linear;
+}
+.login-html .sign-in,
+.login-html .sign-up,
+.login-form .group .check {
+  display: none;
+}
+.login-html .tab,
+.login-form .group .label,
+.login-form .group .button {
+  text-transform: uppercase;
+}
+.login-html .tab {
+  font-size: 22px;
+  margin-right: 15px;
+  padding-bottom: 5px;
+  margin: 0 15px 10px 0;
+  display: inline-block;
+  border-bottom: 2px solid transparent;
+}
+.login-html .sign-in:checked + .tab,
+.login-html .sign-up:checked + .tab {
+  color: #fff;
+  border-color: #1161ee;
+}
+.login-form {
+  min-height: 345px;
+  position: relative;
+  perspective: 1000px;
+  transform-style: preserve-3d;
+}
+.login-form .group {
+  margin-bottom: 15px;
+}
+.login-form .group .label,
+.login-form .group .input,
+.login-form .group .button {
+  width: 100%;
+  color: #fff;
+  display: block;
+}
+.login-form .group .input,
+.login-form .group .button {
+  border: none;
+  padding: 15px 20px;
+  border-radius: 25px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.login-form .group input[data-type="password"] {
+  text-security: circle;
+  -webkit-text-security: circle;
+}
+.login-form .group .label {
+  color: #aaa;
+  font-size: 12px;
+}
+.login-form .group .button {
+  background: #1161ee;
+}
+.login-form .group label .icon {
+  width: 15px;
+  height: 15px;
+  border-radius: 2px;
+  position: relative;
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.1);
+}
+.login-form .group label .icon:before,
+.login-form .group label .icon:after {
+  content: "";
+  width: 10px;
+  height: 2px;
+  background: #fff;
+  position: absolute;
+  transition: all 0.2s ease-in-out 0s;
+}
+.login-form .group label .icon:before {
+  left: 3px;
+  width: 5px;
+  bottom: 6px;
+  transform: scale(0) rotate(0);
+}
+.login-form .group label .icon:after {
+  top: 6px;
+  right: 0;
+  transform: scale(0) rotate(0);
+}
+.login-form .group .check:checked + label {
+  color: #fff;
+}
+.login-form .group .check:checked + label .icon {
+  background: #1161ee;
+}
+.login-form .group .check:checked + label .icon:before {
+  transform: scale(1) rotate(45deg);
+}
+.login-form .group .check:checked + label .icon:after {
+  transform: scale(1) rotate(-45deg);
+}
+.login-html
+  .sign-in:checked
+  + .tab
+  + .sign-up
+  + .tab
+  + .login-form
+  .sign-in-htm {
+  transform: rotate(0);
+}
+.login-html .sign-up:checked + .tab + .login-form .sign-up-htm {
+  transform: rotate(0);
+}
+
+.hr {
+  height: 2px;
+  margin: 60px 0 50px 0;
+  background: rgba(255, 255, 255, 0.2);
+}
+.foot-lnk {
+  text-align: center;
+}
+
+</style>
+
+            <pega:choose>
+            <pega:when test="DisableAutoComplete" >
+            <form name="main" method="post" onSubmit="return sendLoginRequestForm(event);" action="<pega:reference name="pxThread.pxReqURI" mode="normal" />" target="_top" novalidate="novalidate" autocomplete="off" >
+                </pega:when>
+                <pega:otherwise>
+                <form name="main" method="post" onSubmit="return sendLoginRequestForm(event);" action="<pega:reference name="pxThread.pxReqURI" mode="normal" />" novalidate="novalidate" target="_top" >
+                    </pega:otherwise>
+                    </pega:choose>
+                    <input type="hidden" name="pzAuth" value="guest" />
+                                     
+<div class="container" onclick="onclick">
+<div class="top"></div>
+<div class="bottom"></div>
+<div class="center">
+<div id="credentials">
+  <div class="login-wrap">     
+	<div class="login-html">
+  <input id="tab-1" type="radio" name="tab" class="sign-in" checked><label for="tab-1" class="tab">Log In</label>
+  <input id="tab-2" type="radio" name="tab" class="sign-up"><label for="tab-2" class="tab">Sign Up</label>
+   <div class="login-form">
+     	<div class="sign-up-htm">
+				<div class="group">
+					<label for="user" class="label">Username</label>
+					<input id="user" type="text" class="input">
+				</div>
+				<div class="group">
+					<label for="pass" class="label">Password</label>
+					<input id="pass" type="password" class="input" data-type="password">
+				</div>
+				<div class="group">
+					<label for="pass" class="label">Repeat Password</label>
+					<input id="pass" type="password" class="input" data-type="password">
+				</div>
+				<div class="group">
+					<label for="pass" class="label">Email Address</label>
+					<input id="pass" type="text" class="input">
+				</div>
+				<div class="group">
+					<input type="submit" class="button" value="Sign Up">
+				</div>
+				<div class="hr"></div>
+				<div class="foot-lnk">
+					<label for="tab-1">Already Member?</a>
+				</div>
+			</div>
+			<div class="sign-in-htm">
+                                <div id="credentialsForm">
+                                    <div class="group">
+                                        <label for="txtUserID" class="label"> User Name
+                                        </label>
+                                        <input id="txtUserID" autocorrect="off" autocapitalize="none" class="input" type="text" name="UserIdentifier" value="" size="20" maxlength="128"/>
+                                    </div>
+                                    <div class="group">
+                                        <label for="txtPassword" class="label">Password
+                                        </label>
+                                        <input id="txtPassword" class="input" type="password" name="Password" value="" size="20"/>
+                                    </div>
+                                  <div class="group">
+					                        <input id="check" type="checkbox" class="check" checked>
+					                        <label for="check"><span class="icon"></span> Keep me Signed in</label>
+				                          </div>
+                                </div>
+                                <div id="authorizationCodeForm" style="display:none">
+                                </div>
+                                <pega:when test='(AlwaysCaptcha.pxShowCaptcha=="true" || LoginError.pxShowCaptcha=="true")'>
+                                <pega:when java='<%= tools.findPage("Declare_AuthPolicies") != null %>'>
+                                <pega:choose>
+                                <pega:when test='(Declare_AuthPolicies.pyCaptchaType=="default")'>
+                                <div class="captcha">
+                                    <div class="description">
+                                        <pega:lookup property="pxRequestor.pyActionPrompt" value="Type the characters you see in the picture below" />
+                                    </div>
+                                    <div class="captchaImg" id="captchaDiv"></div>
+                                    <img src="webwb/desktopimages/pzRefreshCaptcha.png" id="refreshCaptcha" onclick="changeCaptcha();" title='<pega:lookup property="pxRequestor.pyActionPrompt" value="Try different image" />' />
+                                    <input type="text" autocorrect="off" autocapitalize="none" class="captchaInputBox" size="20" name="captchaResponse"  placeholder="Captcha value" value="" aria-label="Captcha value" />
+                                    </pega:when>
+                                    <pega:when test='(Declare_AuthPolicies.pyCaptchaType=="custom")'>
+                                        <div>
+                                            <pega:include name="pyCustomCaptchaBody" type="Rule-HTML-Fragment" />
+                                        </div>
+                                    </pega:when>
+                                    </pega:choose>
+                                    </pega:when>
+                                    </pega:when>
+                                    <div id="submit_row">
+                                      <div class="group">
+                                        <button id='sub' class="button" name="pyActivity=Code-Security.Login" type="submit" onClick="removeErrorMessage();" >
+                                            <span class="loginButtonText" ><pega:lookup property="pxRequestor.pyButtonLabel" value="Log in" /></span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  
+                                    <pega:when java='<%= !isHybridClient && !isPegaElectronContainer %>'>
+                                        <div id="submit_row_2" style='padding-top:30px'>
+                                            <a id="spnLoginFrgtPwd" class="linkButton" onClick="clickForgotButton();" href="#">Trouble logging in?</a>
+                                        </div>
+                                        <div style="visibility: hidden;position:absolute;">
+                                            <button id='sub_forgotpwd' class="linkButton" name="pyActivity=Code-Security.pzShowForgotPassword" type="submit" onClick="removeErrorMessage();" >
+                                                <span><pega:lookup property="pxRequestor.pyButtonLabel" value="Forgot password" /></span>
+                                            </button>
+                                        </div>
+                                    </pega:when>
+                                    <div id="do_not_submit_row">
+                                        <button id='sub_do_not_show' class="loginButton" name="pyActivity=Code-Security.Login" type="button" disabled >
+                                            <span class="loginButtonText" ><pega:lookup property="pxRequestor.pyButtonLabel" value="Log in" /></span>
+                                        </button>
+                                    </div>
+                                    <pega:when java='<%= "true".equals(enableFingerprintAuthenticator) %>'>
+                                        <div class="iOS" id="fingerprintAuthenticator_checkbox_row" style="display: none">
+                                            <% if(ua.contains("iPhone") || ua.contains("iPad")) { %>
+                                            <span class="label" id="biometric-label">Remember me with Face ID or Touch ID</span>
+                                            <% } else if(ua.contains("Android")) { %>
+                                            <span class="label" id="biometric-label">Remember me with fingerprint</span>
+                                            <% } %>
+                                            <div class="checkbox">
+                                                <input type="checkbox" id="fingerprint_checkbox" aria-labelledby="biometric-label" />
+                                                <label for="fingerprint_checkbox"><span class="sr-only">Remember my biometrics.</span></label>
+                                            </div>
+                                        </div>
+                                    </pega:when>
+ </div>
+  </div>
+    </div>
+    </div>
+                                </div><!--/ credentials -->
+   
+                                <div id="lockScreen" style="display:none">
+                                    <div class="field user">
+                                        <label for="lockScreenID">
+                                            <span class="sr-only"><pega:lookup property="pxRequestor.pyCaption" value="User Name"/></span>
+                                        </label>
+                                        <input id="lockScreenID" class="inputBox" type="text" name="lockScreenID" value="" size="20" maxlength="128" readonly/>
+                                    </div>
+
+                                    <div class="field password">
+                                        <label for="lockScreenPassword">
+                                            <span class="sr-only"><pega:lookup property="pxRequestor.pyCaption" value="Password"/></span>
+                                        </label>
+                                        <input id="lockScreenPassword" class="inputBox" type="password" name="lockScreenPassword" value="" size="20"/>
+                                    </div>
+                                    <div id="lockScreenUnlockDiv">
+                                        <button id='lockScreenUnlockBtn' class="loginButton" name="lock_screen_unlock" type="button"
+                                                onClick="lockScreen.unlock();">
+                                            <span class="loginButtonText"><pega:lookup property="pxRequestor.pyButtonLabel" value="Unlock"/></span>
+                                        </button>
+                                    </div>
+                                    <div id="lockScreenCancelDiv">
+                                        <button id='lockScreenCancelBtn' class="loginButton" name="lock_screen_cancel" type="button"
+                                                onClick="lockScreen.cancelButtonClicked();">
+                                            <span class="loginButtonText"><pega:lookup property="pxRequestor.pyButtonLabel" value="Cancel"/></span>
+                                        </button>
+                                    </div>
+                                    <div id="lockScreenSwitchUserDiv" style="display:none">
+                                        <button id='lockScreenSwitchUserBtn' class="loginButton" name="lock_screen_switch_user"
+                                                type="button">
+                                            <span class="loginButtonText"><pega:lookup
+                                                    property="pxRequestor.pyButtonLabel" value="Switch User"/></span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <!--/ lockScreen -->
+
+
+                                <div id="changePasswordDiv" style="display:none">
+                                    <span class="changePasswordText" >Security policies require a password update.</span>
+                                    <div class="passwordStrength">
+                                        <span class="label" id="passwordStrengthLabel"></span>
+                                    </div>
+
+                                    <div class="field passwordChange" id="passwordChangeLabel">
+                                        <label for="newPassword">
+                                            <span class="sr-only"><pega:lookup property="pxRequestor.pyCaption" value="New password"/></span>
+                                        </label>
+                                        <input id="newPassword" class="inputBox" type="password" name="newPassword" value="" size="20"  placeholder="New password"/>
+                                    </div>
+
+                                    <div class="field password" id="passwordChangeConfirmLabel">
+                                        <label for="confirmNewPassword">
+                                           <span class="sr-only"><pega:lookup property="pxRequestor.pyCaption" value="Confirm password"/></span>
+                                        </label>
+                                        <input id="confirmNewPassword" class="inputBox" type="password" name="confirmNewPassword" value="" size="20"  placeholder="Confirm password"/>
+                                    </div>
+
+                                    <div id="changePasswordButton">
+                                        <button id='changePasswordBtn' class="loginButton" name="lock_screen_unlock" type="button"
+                                                onClick="changePasswordOnServer();">
+                                            <span class="loginButtonText"><pega:lookup property="pxRequestor.pyButtonLabel" value="Update password"/></span>
+                                        </button>
+                                    </div>
+
+                                    <div id="changePasswordCancelDiv">
+                                        <button id='changePasswordCancelBtn' class="linkButton" name="lock_screen_cancel" type="button"
+                                                onClick="cancelPasswordChange();">
+                                            <span class="loginButtonText"><pega:lookup property="pxRequestor.pyButtonLabel" value="Back"/></span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <!--/ change password -->
+
+
+                                <!-- Need to make this a11y - https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/ARIA_Techniques/Using_the_progressbar_role -->
+                                <div id="loadingProgressBar" class="progress-bar hidden">
+                                    <div class="current-progress"></div>
+                                </div>
+                            </div>
+<h2>&nbsp;</h2>
+</div>
+</div>
+        </main>
+        <script>
+            javascript:window.history.forward(1);
+            var pxReqContextURI = '<pega:reference name="pxRequestor.pxReqContextURI" mode="normal" />';
+            var pxReqURI = '<pega:reference name="pxThread.pxReqURI" mode="normal" />';
+            var hasTenantId = <%= hasTenantId %>;
+            var isPegaElectronContainer = <%= isPegaElectronContainer %>;
+            var isHybridClient = <%= isHybridClient %>;
+            <% if(isPegaElectronContainer) { %>
+            var pegaAuthenticatorLoginUrl = pxReqContextURI +'/?<%=pega_rules_utilities.pzEncryptURLActionString(tools, "Global","pyActivity=Data-Portal.pzGetMobileAppConfiguration")%>';
+            <% } %>
+            function toggleLoginButton(visibility) {
+                var c;
+                var b;
+                var u = document.getElementById('txtUserID');
+                var p = document.getElementById('txtPassword');
+                if (visibility) {
+                    if(typeof loadingProgressBarEl != 'undefined') loadingProgressBarEl.hide();
+                    document.getElementById('do_not_submit_row').style.visibility = 'hidden';
+                    document.getElementById('submit_row').style.visibility = '';
+                    u.onkeypress = null;
+                    p.onkeypress = null;
+                } else {
+                    document.getElementById('submit_row').style.visibility = 'hidden';
+                    document.getElementById('do_not_submit_row').style.visibility = '';
+                    u.onkeypress = function(event) { return event.preventDefault(); }
+                    p.onkeypress = function(event) { return event.preventDefault(); }
+                }
+                u.readOnly = !visibility;
+                p.readOnly = !visibility;
+            }
+
+            function toggleForgotLink(visibility) {
+                var forgotLink = document.getElementById('spnLoginFrgtPwd');
+                if (visibility) {
+                    forgotLink.style.visibility = '';
+                } else {
+                    forgotLink.style.visibility = 'hidden';
+                }
+            }
+
+            function removeErrorMessage() {
+                toggleLoginButton(false);
+                if(!isHybridClient && !isPegaElectronContainer) {
+                    toggleForgotLink(false);
+                }
+                var error = document.getElementById("error");
+                if(error) {
+                    error.innerHTML = "";
+                    error.style.display = "none";
+                }
+            }
+
+            function changeCaptcha() {
+                var captchaSrc = "<%=captchaURL%>"+"&"+(new Date()).getTime();
+                document.getElementById("captchaDiv").style.backgroundImage = "url('"+captchaSrc+"')";
+            }
+
+            function processOnLoad() {
+                toggleLoginButton(true);
+                <pega:when test="PromoteEmbeddedPortals" >
+                /* make sure we're not embedded in some way */
+                if (self != top) {
+                    top.location.replace(location.href);
+                    return;
+                }
+                </pega:when>
+                if(typeof processOnLoadMobile == "function") {
+                    window.onLaunchboxLoaded = processOnLoadMobile;
+                }
+                else {
+                    try {
+                        document.getElementById("txtUserID").focus();
+                    }
+                    catch(err){}
+                }
+
+            }
+
+            function sendLoginRequestForm(e) {
+                return true; // use normal form submit
+            }
+            function clickForgotButton(){
+                toggleForgotLink(false);
+                document.getElementById('txtUserID').value="";
+                document.getElementById('txtPassword').value="";
+                document.getElementById('sub_forgotpwd').click();
+            }
+        </script>
+        <%
+            if(isHybridClient || isPegaElectronContainer) {
+        %>
+        <script src='webwb/pyWeb-login-mobile-app-manager.js'></script>
+        <script src='webwb/pyWeb-login-mobile-authentication.js'></script>
+        <script src='webwb/pyWeb-login-mobile-forced-password-change.js'></script>
+        <script src='webwb/pzClientOfflineConfiguration.js'></script>
+        <script src='webwb/pyWeb-login-mobile-synchronization.js'></script>
+        <script src='webwb/pyWeb-login-mobile-touchId.js'></script>
+        <script src='webwb/pyWeb-login-mobile-ui-logs-container.js'></script>
+        <script src='webwb/pyWeb-login-mobile-ui-progress-bar.js'></script>
+        <script src='webwb/pyWeb-login-mobile-utils.js'></script>
+        <script src='webwb/pyWeb-login-mobile-lockscreen.js'></script>
+        <script src='webwb/pyWeb-login-mobile-logintimeout.js'></script>
+        <script src='webwb/pyWeb-login-mobile.js'></script>
+        <script src='webwb/pyMobileBootstrapApp.js'></script>
+        <script src='webwb/pyMobileBootstrapAuthentication.js'></script>
+        <script src='webwb/pyMobileBootstrapClientStore.js'></script>
+        <script src='webwb/pyMobileBootstrapControllers.js'></script>
+        <script src='webwb/pyMobileBootstrapListeners.js'></script>
+        <script src='webwb/pyMobileBootstrapUtils.js'></script>
+        <script src='webwb/pyMobileBootstrapViews.js'></script>
+        <% }  %>
+             
+        </body>
+          
+          
+        </html>
+    </pega:otherwise>
+</pega:choose>
