@@ -83,6 +83,7 @@
             <title>
                 <pega:lookup property="pxRequestor.pyCaption" value="Login Page" />
             </title>
+          <link rel='stylesheet' type='text/css' href='https://fonts.googleapis.com/css?family=Raleway:400,700' />
             <link rel='stylesheet' type='text/css' href='webwb/py-login-screen.css' />
             <style>
                 .captchaImg {
